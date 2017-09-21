@@ -25,6 +25,11 @@ public interface IOrderService {
     void deleteOrderAndDeliveryAndOrderSKU(String orderId) throws Exception;
 
     /**
+     * update order delivery
+     */
+    OrderDTO updateOrderDelivery(String orderId, String deliveryStatus) throws Exception;
+
+    /**
      *  check method
      */
     boolean checkSKUParam(List<OrderSKUDTO> orderskudtoList, List<REcSku> skuList);

@@ -3,6 +3,8 @@ package com.htsat.order.serviceimpl;
 import com.htsat.order.dao.*;
 import com.htsat.order.dto.OrderDTO;
 import com.htsat.order.dto.OrderSKUDTO;
+import com.htsat.order.enums.DeliveryStatusEnum;
+import com.htsat.order.enums.OrderStatusEnum;
 import com.htsat.order.model.*;
 import com.htsat.order.service.IOrderService;
 import com.htsat.order.service.IRedisService;
@@ -12,6 +14,7 @@ import com.htsat.order.utils.SerializeUtil;
 import com.htsat.order.utils.SortList;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -67,7 +70,8 @@ public class OrderServiceImpl implements IOrderService {
         REcDeliveryinfo deliveryinfo = new REcDeliveryinfo();
         deliveryinfo.setSdeliveryid(orderDTO.getDeliveryDTO().getDeliveryId());
         deliveryinfo.setNdeliveryprice(orderDTO.getDeliveryDTO().getDeliveryPrice());
-        deliveryinfo.setCstatus(orderDTO.getDeliveryDTO().getStatus());
+//        deliveryinfo.setCstatus(orderDTO.getDeliveryDTO().getStatus());
+        deliveryinfo.setCstatus("0");
         if (StringUtils.isNotEmpty(orderDTO.getDeliveryDTO().getExpressCompany()))
             deliveryinfo.setSexpresscompany(orderDTO.getDeliveryDTO().getExpressCompany());
         int result = deliveryinfoMapper.insert(deliveryinfo);
@@ -96,9 +100,9 @@ public class OrderServiceImpl implements IOrderService {
             orderinfo.setSdatePaid(new Date());
             orderinfo.setCpaymentmethod(orderDTO.getPaymentMethod());
             orderinfo.setSpaymentmethodtitle(orderDTO.getPaymentMethodTitle());
-            orderinfo.setCstatus("1");//
+            orderinfo.setCstatus("1");//1
         } else {
-            orderinfo.setCstatus("0");//
+            orderinfo.setCstatus("0");//0
         }
         orderinfo.setSdeliveryid(orderDTO.getDeliveryDTO().getDeliveryId());//后续需要改成表自动生成
 
@@ -243,6 +247,68 @@ public class OrderServiceImpl implements IOrderService {
 
     private void deleteOrderInfoByRedis(String orderId) throws Exception {
         getJedis().del(orderId);
+    }
+
+    /**
+     * update order delivery
+     * order  0：未支付;1：已支付未发货;2：已发货;3：已接收;4：已关闭
+     * delivery  1：已收件;2：在途;3：待签收;4：已签收
+     */
+    @Override
+    public OrderDTO updateOrderDelivery(String orderId, String deliveryStatus) throws Exception {
+        OrderDTO orderDTO = updateOrderDeliveryByMySQL(orderId, deliveryStatus);
+        updateOrderDeliveryByRedis(orderDTO);
+        return orderDTO;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED,isolation = Isolation.DEFAULT,timeout=3600,rollbackFor=Exception.class)
+    public OrderDTO updateOrderDeliveryByMySQL(String orderId, String deliveryStatus) throws Exception{
+        REcOrderinfo orderinfo = orderinfoMapper.selectByPrimaryKey(orderId);
+        if (orderinfo == null) {
+            throw new Exception();
+        }
+        REcDeliveryinfo deliveryinfo = deliveryinfoMapper.selectByPrimaryKey(orderinfo.getSdeliveryid());
+        if (deliveryinfo == null) {
+            throw new Exception();
+        }
+
+        //update delivery
+        deliveryinfo.setCstatus(deliveryStatus);
+        int resultDelivery = deliveryinfoMapper.updateByPrimaryKey(deliveryinfo);
+        if (resultDelivery != 1) {
+            throw new Exception();
+        }
+
+        //update order
+        if (deliveryStatus.equals("4")) {//delivery has sign , order receive
+            orderinfo.setCstatus("3");
+        } else if (deliveryStatus.equals("1")
+                    || deliveryStatus.equals("2")
+                    || deliveryStatus.equals("3")){
+            orderinfo.setCstatus("2");
+        } else {
+            //do nothing
+        }
+        int resultOrder = orderinfoMapper.updateByPrimaryKey(orderinfo);
+        if (resultOrder != 1) {
+            throw new Exception();
+        }
+
+        REcUserdeliveryaddress address = addressMapper.selectByPrimaryKey(orderinfo.getNaddressno());
+        if (address == null) {
+            throw new Exception();
+        }
+
+        List<REcOrdersku> orderskuList = orderskuMapper.selectByOrderId(orderId);
+        if (orderskuList == null) {
+            throw new Exception();
+        }
+
+        return ConvertToDTO.convertToOrderDTO(deliveryinfo, orderinfo, orderskuList, address);
+    }
+
+    private void updateOrderDeliveryByRedis(OrderDTO orderDTO) throws Exception{
+        getJedis().set(orderDTO.getOrderId().getBytes(), SerializeUtil.serialize(orderDTO));
     }
 
     /**

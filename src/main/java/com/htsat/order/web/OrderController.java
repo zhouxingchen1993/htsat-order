@@ -1,11 +1,14 @@
 package com.htsat.order.web;
 
+import com.htsat.order.dto.DeliveryDTO;
 import com.htsat.order.dto.OrderDTO;
 import com.htsat.order.dto.StatusDTO;
 import com.htsat.order.enums.ExcuteStatusEnum;
 import com.htsat.order.service.IAddressService;
 import com.htsat.order.service.IOrderService;
 import com.htsat.order.service.IUserService;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.math.NumberUtils;
 import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -89,6 +92,29 @@ public class OrderController {
         }
         status.setStatus(ExcuteStatusEnum.SUCCESS);
         return status;
+    }
+
+    @RequestMapping(value = "/orders/{userId}/{orderId}/{deliveryStatus}", method = RequestMethod.POST)
+    @ResponseBody
+    public OrderDTO updateOrderStatusByDelivery(@PathVariable("userId") Integer userId, @PathVariable("orderId") String orderId, @PathVariable("deliveryStatus") String deliveryStatus) {
+        if (!userService.checkUserAvailable(userId) || StringUtils.isEmpty(orderId) || !NumberUtils.isNumber(deliveryStatus)) {
+            return null;
+        }
+        OrderDTO orderDTO = null;
+        try {
+            orderDTO = orderService.updateOrderDelivery(orderId, deliveryStatus);
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.info("update delivery exception !");
+            return null;
+        }
+        return orderDTO;
+    }
+
+    @RequestMapping(value = "/orders/payment", method = RequestMethod.POST)
+    @ResponseBody
+    public OrderDTO updateOrderStatusAndPaymentMethodByPayment(@RequestBody OrderDTO orderDTO) {
+        return null;
     }
 
 }
